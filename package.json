@@ -1,0 +1,23 @@
+{
+    "name": "sheet-to-slack",
+    "version": "0.1.0",
+    "description": "Google Sheets rows to Slack notifier (GAS)",
+    "scripts": {
+        "deploy": "clasp push",
+        "pull": "clasp pull",
+        "open": "clasp open",
+        "logs": "clasp logs",
+        "create": "clasp create --title \"SheetToSlack\" --type standalone",
+        "setup": "npm install -g @google/clasp && clasp login"
+    },
+    "keywords": [
+        "gas",
+        "slack",
+        "google-apps-script"
+    ],
+    "author": "Your Name",
+    "license": "MIT",
+    "devDependencies": {
+        "@google/clasp": "^2.4.2"
+    }
+}
