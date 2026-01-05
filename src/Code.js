@@ -10,9 +10,9 @@ const COLS = {
   WEEKS_START: 4, // 4-10
   HOLIDAY: 11,
   SLACK_CHANNEL: 12,
-  MENTION: 13,
+  DESTINATION: 13,
   MESSAGE: 14,
-  AUTHOR: 15
+  REGISTERED_BY: 15
 };
 
 function Main() {
@@ -91,12 +91,19 @@ function processNotificationRows(rows, now, slackNotifier, config) {
     }
 
     try {
-      const formattedMention = slackNotifier.formatMention(row.mention);
+      const formattedMention = slackNotifier.formatMention(row.destination);
       slackNotifier.send(row.slackChannel, formattedMention, row.message);
       logRowDone(notificationNo);
     } catch (e) {
       const message = `${notificationNo}行目の通知失敗 message:${e.message}`;
       logError(message);
+      if (row.registeredBy) {
+        try {
+          slackNotifier.sendDirect(row.registeredBy, message);
+        } catch (dmError) {
+          logError(`登録者へのDM送信に失敗: ${dmError.message}`);
+        }
+      }
       if (config.isErrorMail) {
         MailApp.sendEmail(config.botMaster, 'onobotからお知らせ　通知失敗', message);
       }
@@ -131,9 +138,9 @@ function parseNotificationRow(row, notificationNo) {
     weeks: row.slice(COLS.WEEKS_START, COLS.WEEKS_START + 7),
     allowOffday: row[COLS.HOLIDAY],
     slackChannel: row[COLS.SLACK_CHANNEL],
-    mention: row[COLS.MENTION],
+    destination: row[COLS.DESTINATION],
     message: row[COLS.MESSAGE],
-    author: row[COLS.AUTHOR],
+    registeredBy: row[COLS.REGISTERED_BY],
     notificationNo: notificationNo
   };
 }
