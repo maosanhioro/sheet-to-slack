@@ -1,8 +1,4 @@
 // 通知設定シートを読み取り、Slack/メール送信を行うメイン処理。
-const SHEET_NAMES = {
-  NOTIFICATIONS: '通知設定'
-};
-
 // 通知設定シートの列インデックス定義。
 const LOG_PREFIX = '[sheet-to-slack]';
 
@@ -37,25 +33,30 @@ function main() {
 
 function Action() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const notificationSheet = spreadsheet.getSheetByName(SHEET_NAMES.NOTIFICATIONS);
-  if (!notificationSheet) {
-    logError('通知シートが見つかりません');
-    return;
-  }
-
   const config = Config.create();
+  const notificationSheetNames = getNotificationSheetNames();
   const now = new Date(config.debugDate);
   const slackNotifier = new SlackNotifier(config.webhookUrl);
-  const rows = notificationSheet.getDataRange().getValues();
-
   logInfo('通知処理開始');
+
+  notificationSheetNames.forEach(function (sheetName) {
+    const notificationSheet = spreadsheet.getSheetByName(sheetName);
+    if (!notificationSheet) {
+      throw new Error(`通知シートが見つかりません: ${sheetName}`);
+    }
+    const rows = notificationSheet.getDataRange().getValues();
+    processNotificationRows(rows, now, slackNotifier, config);
+  });
+}
+
+function processNotificationRows(rows, now, slackNotifier, config) {
   for (let i = 1; i < rows.length; i++) {
     const notificationNo = i + 1;
-  const row = parseNotificationRow(rows[i], notificationNo);
-  if (!row) {
-    logSkip(notificationNo, '必須項目不足のためスキップ');
-    continue;
-  }
+    const row = parseNotificationRow(rows[i], notificationNo);
+    if (!row) {
+      logSkip(notificationNo, '必須項目不足のためスキップ');
+      continue;
+    }
 
     if (!isValidDateCell(row.time)) {
       logSkip(notificationNo, '時間列が不正のためスキップ');
@@ -101,6 +102,20 @@ function Action() {
       }
     }
   }
+}
+
+function getNotificationSheetNames() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = (props.getProperty('NOTIFICATION_SHEETS') || '').toString();
+  const names = raw.split(',').map(function (name) {
+    return name.trim();
+  }).filter(function (name) {
+    return name !== '';
+  });
+  if (names.length === 0) {
+    throw new Error('Script Properties NOTIFICATION_SHEETS が設定されていません');
+  }
+  return names;
 }
 
 function parseNotificationRow(row, notificationNo) {

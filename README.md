@@ -25,6 +25,7 @@ sheet-to-slack/
 
 ### Webhook 設定
 - Script Properties に `SLACK_WEBHOOK_URL` を設定してください（単一ワークスペース前提）。
+- 通知シート名は `NOTIFICATION_SHEETS` で指定（カンマ区切り複数可、未設定/空はエラー）。
 
 ## 日常コマンド
 - `npm run deploy` : GAS へ push
@@ -35,6 +36,17 @@ sheet-to-slack/
 ## ドキュメント
 - 現状仕様と運用ルール: `docs/CURRENT_SPEC.md`
 - UI/運用改善の提案: `docs/UI_IMPROVEMENT_PROPOSALS.md`
+
+### バックアップからの差し戻し手順（backups/ にコピーがある場合）
+- 前提: `backups/…` に以前の Apps Script ファイル群が保存されている（git 管理外）。
+- 手順:
+  1. 作業ツリーがクリーンか確認: `git status`
+  2. `backups/<バックアップ名>` から `src/` へ上書きコピー（`appsscript.json` も必要なら同様に）  
+     例) `cp backups/1W66...203402/*.js src/`  
+         `cp backups/1W66...203402/appsscript.json src/`
+  3. 差分確認: `git status -sb` / `git diff`
+  4. GAS へ反映: `npm run deploy`（= `clasp push`）
+  5. 必要ならコミット: `git add src appsscript.json && git commit -m "バックアップから復元"`
 
 ## 開発メモ
 - `src` 配下のみを同期対象にしています (`rootDir`=src)。
