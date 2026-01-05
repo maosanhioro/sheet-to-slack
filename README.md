@@ -2,12 +2,19 @@
 
 Google スプレッドシートの内容を Slack に通知する Google Apps Script プロジェクトのローカル開発リポジトリです。
 
+## 何ができるか
+- スプレッドシートの複数シート（カンマ区切り指定）を走査し、条件に合致した行を Slack に送信。
+- 日付指定／曜日指定に対応。土日祝をスキップするフラグあり（祝日は Google日本祝日カレンダーで判定）。
+- 宛先は `here`/`channel`/ユーザー名/ユーザーIDをカンマ区切りで指定可能。
+- 通知失敗時は管理者メール（任意）と、登録者欄があれば登録者へのDMを試行。
+
 ## 構成
 ```
 sheet-to-slack/
 ├── src/                 # clasp の rootDir
 │   ├── Code.js          # エントリポイント
 │   └── appsscript.json  # GAS マニフェスト
+├── docs/                # 仕様・改善提案
 ├── .clasp.json.example  # Script ID を入れる雛形
 ├── package.json         # clasp 用 npm スクリプト
 └── .gitignore
@@ -21,11 +28,17 @@ sheet-to-slack/
    cp .clasp.json.example .clasp.json
    # scriptId を編集
    ```
-4. `npm run pull` で既存のスクリプトを取得、または `npm run create` で新規作成。
+4. Script Properties を設定  
+   - `SLACK_WEBHOOK_URL` : 必須（単一ワークスペース前提）
+   - `NOTIFICATION_SHEETS` : 必須。通知シート名をカンマ区切りで列挙（例: `通知設定,営業部`）
+   - `BOT_MASTER` : 管理者メールアドレス（任意、エラー通知用）
+   - `ERROR_MAIL_ENABLED` : エラーメール送信可否（true/false）
+   - `DEBUG_DATE` : デバッグ実行日時（任意。未設定なら現在日時）
+5. `npm run pull` で既存のスクリプトを取得、または `npm run create` で新規作成。
 
-### Webhook 設定
-- Script Properties に `SLACK_WEBHOOK_URL` を設定してください（単一ワークスペース前提）。
-- 通知シート名は `NOTIFICATION_SHEETS` で指定（カンマ区切り複数可、未設定/空はエラー）。
+## 使い方（シート）
+- 列構成や判定ルールは `docs/CURRENT_SPEC.md` を参照。列名は「宛先」「登録者」に変更済み。
+- シート名は `NOTIFICATION_SHEETS` で指定したもののみ処理。未設定や存在しない場合はエラーで停止。
 
 ## 日常コマンド
 - `npm run deploy` : GAS へ push
@@ -37,7 +50,7 @@ sheet-to-slack/
 - 現状仕様と運用ルール: `docs/CURRENT_SPEC.md`
 - UI/運用改善の提案: `docs/UI_IMPROVEMENT_PROPOSALS.md`
 
-### バックアップからの差し戻し手順（backups/ にコピーがある場合）
+## バックアップからの差し戻し（backups/ にコピーがある場合）
 - 前提: `backups/…` に以前の Apps Script ファイル群が保存されている（git 管理外）。
 - 手順:
   1. 作業ツリーがクリーンか確認: `git status`
@@ -51,4 +64,3 @@ sheet-to-slack/
 ## 開発メモ
 - `src` 配下のみを同期対象にしています (`rootDir`=src)。
 - 認証情報 (`.clasp.json`, `.clasprc.json`) は git から除外しています。
-- 実装や設計は `furi-9-monitor` の構成を参考に進めてください。
