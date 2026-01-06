@@ -49,6 +49,7 @@ sheet-to-slack/
 ## ドキュメント
 - 現状仕様と運用ルール: `docs/CURRENT_SPEC.md`
 - UI/運用改善の提案: `docs/UI_IMPROVEMENT_PROPOSALS.md`
+- かんたん入力ガイド（非エンジニア向け）: `docs/USER_GUIDE.md`
 
 ## バックアップからの差し戻し（backups/ にコピーがある場合）
 - 前提: `backups/…` に以前の Apps Script ファイル群が保存されている（git 管理外）。

@@ -8,8 +8,9 @@ SlackNotifier.prototype.send = function send(channel, mention, text) {
     if (!this.webhookUrl) {
         throw new Error('Webhook URL is not configured');
     }
+    const normalizedChannel = this.normalizeChannel(channel);
     const payload = {
-        "channel": channel,
+        "channel": normalizedChannel,
         "text": mention + text,
         "link_names": 1,
         "icon_emoji": ':onobot:',
@@ -69,6 +70,22 @@ SlackNotifier.prototype.normalizeUserChannel = function normalizeUserChannel(use
         return `@${trimmed}`;
     }
     return `@${trimmed}`;
+}
+
+SlackNotifier.prototype.normalizeChannel = function normalizeChannel(channel) {
+    if (!channel) {
+        throw new Error('チャンネルが空です');
+    }
+    const trimmed = channel.trim();
+    // チャンネルID形式（C/G で始まる）はそのまま
+    if (/^[CG][A-Z0-9]+$/i.test(trimmed)) {
+        return trimmed;
+    }
+    // # が付いていなければ付与
+    if (!trimmed.startsWith('#')) {
+        return `#${trimmed}`;
+    }
+    return trimmed;
 }
 
 SlackNotifier.prototype.fetch = function (url, payload) {
