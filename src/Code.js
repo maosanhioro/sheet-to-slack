@@ -37,6 +37,7 @@ function Action() {
   const notificationSheetNames = getNotificationSheetNames();
   const now = new Date(config.debugDate);
   const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
+  const expiredRows = [];
   logInfo('通知処理開始');
 
   notificationSheetNames.forEach(function (sheetName) {
@@ -45,11 +46,13 @@ function Action() {
       throw new Error(`通知シートが見つかりません: ${sheetName}`);
     }
     const rows = notificationSheet.getDataRange().getValues();
-    processNotificationRows(rows, now, slackNotifier, config);
+    processNotificationRows(rows, now, slackNotifier, config, sheetName, expiredRows);
   });
+
+  notifyExpiredRows(expiredRows, config, slackNotifier);
 }
 
-function processNotificationRows(rows, now, slackNotifier, config) {
+function processNotificationRows(rows, now, slackNotifier, config, sheetName, expiredRows) {
   for (let i = 1; i < rows.length; i++) {
     const notificationNo = i + 1;
     const row = parseNotificationRow(rows[i], notificationNo);
@@ -70,6 +73,12 @@ function processNotificationRows(rows, now, slackNotifier, config) {
 
     if (shouldSkipByDate(row, now)) {
       logRowSkip(notificationNo, '日付が当日ではないためスキップ');
+      expiredRows.push({
+        sheet: sheetName,
+        row: notificationNo,
+        channel: row.slackChannel,
+        message: row.message
+      });
       continue;
     }
 
@@ -108,6 +117,32 @@ function processNotificationRows(rows, now, slackNotifier, config) {
         MailApp.sendEmail(config.botMaster, 'sheet-to-slack 通知失敗', message);
       }
     }
+  }
+}
+
+function notifyExpiredRows(expiredRows, config, slackNotifier) {
+  if (expiredRows.length === 0) {
+    return;
+  }
+
+  const lines = expiredRows.map(function (item) {
+    return `シート:${item.sheet} 行:${item.row} チャンネル:${item.channel} 本文:${item.message}`;
+  });
+  const body = ['過去日付のためスキップした行があります。不要なら削除をご検討ください。', ''].concat(lines).join('\n');
+
+  if (config.expiredReportChannel) {
+    try {
+      slackNotifier.send(config.expiredReportChannel, '', body);
+      return;
+    } catch (e) {
+      logError(`期限切れ通知のSlack送信に失敗: ${e.message}`);
+    }
+  }
+
+  if (config.botMaster) {
+    MailApp.sendEmail(config.botMaster, 'sheet-to-slack 期限切れ通知行レポート', body);
+  } else {
+    logInfo(`期限切れの行が${expiredRows.length}件ありますが、通知先が未設定のため送信しません`);
   }
 }
 
