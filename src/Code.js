@@ -37,7 +37,7 @@ function Action() {
   const notificationSheetNames = getNotificationSheetNames();
   const now = new Date(config.debugDate);
   const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
-  const expiredRows = [];
+  const expiredRows = config.isExpiredReportEnabled ? [] : null;
   logInfo('通知処理開始');
 
   notificationSheetNames.forEach(function (sheetName) {
@@ -49,7 +49,9 @@ function Action() {
     processNotificationRows(rows, now, slackNotifier, config, sheetName, expiredRows);
   });
 
-  notifyExpiredRows(expiredRows, config, slackNotifier);
+  if (expiredRows) {
+    notifyExpiredRows(expiredRows, config, slackNotifier);
+  }
 }
 
 function processNotificationRows(rows, now, slackNotifier, config, sheetName, expiredRows) {
@@ -73,12 +75,15 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName, ex
 
     if (shouldSkipByDate(row, now)) {
       logRowSkip(notificationNo, '日付が当日ではないためスキップ');
-      expiredRows.push({
-        sheet: sheetName,
-        row: notificationNo,
-        channel: row.slackChannel,
-        message: row.message
-      });
+      if (expiredRows) {
+        expiredRows.push({
+          sheet: sheetName,
+          row: notificationNo,
+          date: `${row.year}/${row.month}/${row.day}`,
+          time: formatTime(row.time),
+          registeredBy: row.registeredBy
+        });
+      }
       continue;
     }
 
@@ -126,7 +131,8 @@ function notifyExpiredRows(expiredRows, config, slackNotifier) {
   }
 
   const lines = expiredRows.map(function (item) {
-    return `シート:${item.sheet} 行:${item.row} チャンネル:${item.channel} 本文:${item.message}`;
+    const registered = item.registeredBy ? ` 登録者:${item.registeredBy}` : '';
+    return `シート:${item.sheet} 行:${item.row} 日付:${item.date} 時刻:${item.time}${registered}`;
   });
   const body = ['過去日付のためスキップした行があります。不要なら削除をご検討ください。', ''].concat(lines).join('\n');
 
@@ -144,6 +150,10 @@ function notifyExpiredRows(expiredRows, config, slackNotifier) {
   } else {
     logInfo(`期限切れの行が${expiredRows.length}件ありますが、通知先が未設定のため送信しません`);
   }
+}
+
+function formatTime(time) {
+  return Utilities.formatDate(new Date(time), 'JST', 'HH:mm');
 }
 
 function getNotificationSheetNames() {
