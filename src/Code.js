@@ -181,8 +181,8 @@ function collectExpiredRows(spreadsheet, sheetNames, now) {
       if (!isValidDayCells(row.year, row.month, row.day)) {
         continue;
       }
-      // 日付指定があり、当日でないものだけを期限切れとして集計
-      if (shouldSkipByDate(row, now)) {
+      // 日付指定があり、過去日付のものだけを期限切れとして集計
+      if (isPastDate(row, now)) {
         expired.push({
           sheet: sheetName,
           row: notificationNo,
@@ -261,6 +261,19 @@ function shouldSkipByDate(row, now) {
   const todayKey = dateKey(now);
   const targetKey = dateKey(targetDate);
   return targetKey !== todayKey;
+}
+
+function isPastDate(row, now) {
+  if (row.year === '指定なし' || row.month === '指定なし' || row.day === '指定なし') {
+    return false;
+  }
+  const targetDate = new Date(now.getTime());
+  targetDate.setFullYear(parseInt(row.year, 10));
+  targetDate.setMonth(parseInt(row.month, 10) - 1);
+  targetDate.setDate(parseInt(row.day, 10));
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return targetDate < startOfToday;
 }
 
 function dateKey(date) {
