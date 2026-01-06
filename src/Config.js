@@ -1,5 +1,5 @@
 // Script Properties から Webhook設定やエラー通知先を保持する。
-function Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji, expiredReportChannel, isExpiredReportEnabled) {
+function Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji, expiredReportChannel) {
     this.webhookUrl = webhookUrl;
     this.botMaster = botMaster;
     this.isErrorMail = isErrorMail;
@@ -7,7 +7,6 @@ function Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, sl
     this.slackUsername = slackUsername;
     this.slackIconEmoji = slackIconEmoji;
     this.expiredReportChannel = expiredReportChannel;
-    this.isExpiredReportEnabled = isExpiredReportEnabled;
 }
 
 Config.create = function () {
@@ -35,7 +34,6 @@ Config.create = function () {
     const debugDate = Utilities.formatDate(new Date(debugDateString), 'JST', 'yyyy/MM/dd HH:mm');
 
     const expiredReportChannel = (props.getProperty('EXPIRED_REPORT_CHANNEL') || '').toString().trim();
-    const isExpiredReportEnabled = (props.getProperty('EXPIRED_REPORT_ENABLED') || 'false').toString().toLowerCase() === 'true';
 
-    return new Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji, expiredReportChannel, isExpiredReportEnabled);
+    return new Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji, expiredReportChannel);
 };

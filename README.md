@@ -35,8 +35,11 @@ sheet-to-slack/
    - `SLACK_ICON_EMOJI` : 必須。Slackに表示するアイコン絵文字（例: `:bell:` のような絵文字名）
    - `BOT_MASTER` : 管理者メールアドレス（任意、エラー通知用）
    - `ERROR_MAIL_ENABLED` : エラーメール送信可否（true/false）
+   - `EXPIRED_REPORT_CHANNEL` : 任意。期限切れ行レポートの送信先チャンネル（未設定なら管理者メール）
    - `DEBUG_DATE` : デバッグ実行日時（任意。未設定なら現在日時）
-5. `npm run pull` で既存のスクリプトを取得、または `npm run create` で新規作成。
+5. （任意）期限切れレポート用の時間トリガーを設定  
+   - 関数 `ReportExpired` を毎日10:00などで実行すると、過去日付行の一覧を Slack/メールで受け取れます。
+6. `npm run pull` で既存のスクリプトを取得、または `npm run create` で新規作成。
 
 ## 使い方（シート）
 - 列構成や判定ルールは `docs/CURRENT_SPEC.md` を参照。列名は「宛先」「登録者」に変更済み。

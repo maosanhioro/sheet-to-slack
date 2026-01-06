@@ -37,7 +37,6 @@ function Action() {
   const notificationSheetNames = getNotificationSheetNames();
   const now = new Date(config.debugDate);
   const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
-  const expiredRows = config.isExpiredReportEnabled ? [] : null;
   logInfo('通知処理開始');
 
   notificationSheetNames.forEach(function (sheetName) {
@@ -46,15 +45,11 @@ function Action() {
       throw new Error(`通知シートが見つかりません: ${sheetName}`);
     }
     const rows = notificationSheet.getDataRange().getValues();
-    processNotificationRows(rows, now, slackNotifier, config, sheetName, expiredRows);
+    processNotificationRows(rows, now, slackNotifier, config, sheetName);
   });
-
-  if (expiredRows) {
-    notifyExpiredRows(expiredRows, config, slackNotifier);
-  }
 }
 
-function processNotificationRows(rows, now, slackNotifier, config, sheetName, expiredRows) {
+function processNotificationRows(rows, now, slackNotifier, config, sheetName) {
   for (let i = 1; i < rows.length; i++) {
     const notificationNo = i + 1;
     const row = parseNotificationRow(rows[i], notificationNo);
@@ -75,14 +70,6 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName, ex
 
     if (shouldSkipByDate(row, now)) {
       logRowSkip(notificationNo, '日付が当日ではないためスキップ');
-      if (expiredRows) {
-        expiredRows.push({
-          sheet: sheetName,
-          row: notificationNo,
-          date: `${row.year}/${row.month}/${row.day}`,
-          registeredBy: row.registeredBy
-        });
-      }
       continue;
     }
 
@@ -153,6 +140,59 @@ function notifyExpiredRows(expiredRows, config, slackNotifier) {
 
 function formatTime(time) {
   return Utilities.formatDate(new Date(time), 'JST', 'HH:mm');
+}
+
+// 期限切れレポート専用のエントリ（時間トリガーで10:00などに実行する想定）
+function ReportExpired() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1)) {
+    return;
+  }
+  try {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const config = Config.create();
+    const notificationSheetNames = getNotificationSheetNames();
+    const now = new Date(config.debugDate);
+    const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
+    const expiredRows = collectExpiredRows(spreadsheet, notificationSheetNames, now);
+    notifyExpiredRows(expiredRows, config, slackNotifier);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function collectExpiredRows(spreadsheet, sheetNames, now) {
+  const expired = [];
+  sheetNames.forEach(function (sheetName) {
+    const sheet = spreadsheet.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error(`通知シートが見つかりません: ${sheetName}`);
+    }
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      const notificationNo = i + 1;
+      const row = parseNotificationRow(rows[i], notificationNo);
+      if (!row) {
+        continue;
+      }
+      if (!isValidDateCell(row.time)) {
+        continue;
+      }
+      if (!isValidDayCells(row.year, row.month, row.day)) {
+        continue;
+      }
+      // 日付指定があり、当日でないものだけを期限切れとして集計
+      if (shouldSkipByDate(row, now)) {
+        expired.push({
+          sheet: sheetName,
+          row: notificationNo,
+          date: `${row.year}/${row.month}/${row.day}`,
+          registeredBy: row.registeredBy
+        });
+      }
+    }
+  });
+  return expired;
 }
 
 function getNotificationSheetNames() {
