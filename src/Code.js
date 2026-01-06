@@ -36,7 +36,7 @@ function Action() {
   const config = Config.create();
   const notificationSheetNames = getNotificationSheetNames();
   const now = new Date(config.debugDate);
-  const slackNotifier = new SlackNotifier(config.webhookUrl);
+  const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
   logInfo('通知処理開始');
 
   notificationSheetNames.forEach(function (sheetName) {
@@ -105,7 +105,7 @@ function processNotificationRows(rows, now, slackNotifier, config) {
         }
       }
       if (config.isErrorMail) {
-        MailApp.sendEmail(config.botMaster, 'onobotからお知らせ　通知失敗', message);
+        MailApp.sendEmail(config.botMaster, 'sheet-to-slack 通知失敗', message);
       }
     }
   }

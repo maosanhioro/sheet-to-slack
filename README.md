@@ -31,6 +31,8 @@ sheet-to-slack/
 4. Script Properties を設定  
    - `SLACK_WEBHOOK_URL` : 必須（単一ワークスペース前提）
    - `NOTIFICATION_SHEETS` : 必須。通知シート名をカンマ区切りで列挙（例: `通知設定,営業部`）
+   - `SLACK_USERNAME` : 必須。Slackに表示する送信者名
+   - `SLACK_ICON_EMOJI` : 必須。Slackに表示するアイコン絵文字（例: `:bell:` のような絵文字名）
    - `BOT_MASTER` : 管理者メールアドレス（任意、エラー通知用）
    - `ERROR_MAIL_ENABLED` : エラーメール送信可否（true/false）
    - `DEBUG_DATE` : デバッグ実行日時（任意。未設定なら現在日時）

@@ -16,6 +16,8 @@
 
 ## Webhook設定と管理者メール
 - Script Properties の `SLACK_WEBHOOK_URL` を使用（単一ワークスペース前提）。
+- Slack送信者名: `SLACK_USERNAME`（必須）
+- Slackアイコン: `SLACK_ICON_EMOJI`（必須、例: `:bell:` のような絵文字名）
 - 管理者メール: `BOT_MASTER`（Script Properties）。エラー通知を送るかは `ERROR_MAIL_ENABLED`（true/false）。
 - デバッグ日時: `DEBUG_DATE`（任意。未設定なら現在時刻）。
 - 通知シート名: `NOTIFICATION_SHEETS`（カンマ区切り複数可。未設定/空はエラーで停止）。

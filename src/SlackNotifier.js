@@ -1,6 +1,7 @@
 // Slackへの送信と宛先（メンション）整形を担当する。
-function SlackNotifier(webhookUrl) {
-    this.username = 'onobot';
+function SlackNotifier(webhookUrl, username, iconEmoji) {
+    this.username = username;
+    this.iconEmoji = iconEmoji;
     this.webhookUrl = webhookUrl;
 }
 
@@ -13,7 +14,7 @@ SlackNotifier.prototype.send = function send(channel, mention, text) {
         "channel": normalizedChannel,
         "text": mention + text,
         "link_names": 1,
-        "icon_emoji": ':onobot:',
+        "icon_emoji": this.iconEmoji,
         "username": this.username
     };
 
@@ -49,7 +50,7 @@ SlackNotifier.prototype.sendDirect = function sendDirect(user, text) {
         "channel": channel,
         "text": text,
         "link_names": 1,
-        "icon_emoji": ':onobot:',
+        "icon_emoji": this.iconEmoji,
         "username": this.username
     };
     this.fetch(this.webhookUrl, payload);
