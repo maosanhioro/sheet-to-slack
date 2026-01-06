@@ -80,7 +80,6 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName, ex
           sheet: sheetName,
           row: notificationNo,
           date: `${row.year}/${row.month}/${row.day}`,
-          time: formatTime(row.time),
           registeredBy: row.registeredBy
         });
       }
@@ -132,7 +131,7 @@ function notifyExpiredRows(expiredRows, config, slackNotifier) {
 
   const lines = expiredRows.map(function (item) {
     const registered = item.registeredBy ? ` 登録者:${item.registeredBy}` : '';
-    return `シート:${item.sheet} 行:${item.row} 日付:${item.date} 時刻:${item.time}${registered}`;
+    return `シート:${item.sheet} 行:${item.row} 日付:${item.date}${registered}`;
   });
   const body = ['過去日付のためスキップした行があります。不要なら削除をご検討ください。', ''].concat(lines).join('\n');
 
