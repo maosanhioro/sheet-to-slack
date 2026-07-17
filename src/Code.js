@@ -1,6 +1,9 @@
 // 通知設定シートを読み取り、Slack/メール送信を行うメイン処理。
 // 通知設定シートの列インデックス定義。
 const LOG_PREFIX = '[sheet-to-slack]';
+const LOCK_WAIT_MS = 30000;
+const NOTIFICATION_LOOKBACK_MINUTES = 5;
+const LAST_NOTIFIED_PREFIX = 'LAST_NOTIFIED';
 
 const COLS = {
   YEAR: 0,
@@ -16,14 +19,7 @@ const COLS = {
 };
 
 function Main() {
-  const lock = LockService.getScriptLock();
-  if (lock.tryLock(1)) {
-    try {
-      Action();
-    } finally {
-      lock.releaseLock();
-    }
-  }
+  withScriptLock('Main', Action);
 }
 
 // 補助エントリ（小文字）も用意
@@ -81,7 +77,8 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName) {
       row.day,
       row.time,
       row.weeks,
-      row.allowOffday
+      row.allowOffday,
+      { lookbackMinutes: NOTIFICATION_LOOKBACK_MINUTES }
     );
 
     logRowStart(notificationNo);
@@ -90,9 +87,17 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName) {
       continue;
     }
 
+    const stateKey = buildLastNotifiedKey(sheetName, notificationNo);
+    const scheduledTimeKey = notificationTime.getScheduledTimeKey();
+    if (isAlreadyNotified(stateKey, scheduledTimeKey)) {
+      logRowSkip(notificationNo, `同一時刻の通知済みのためスキップ scheduled:${scheduledTimeKey}`);
+      continue;
+    }
+
     try {
       const formattedMention = slackNotifier.formatMention(row.destination);
       slackNotifier.send(row.slackChannel, formattedMention, row.message);
+      markAsNotified(stateKey, scheduledTimeKey);
       logRowDone(notificationNo);
     } catch (e) {
       const message = `${notificationNo}行目の通知失敗 message:${e.message}`;
@@ -144,11 +149,7 @@ function formatTime(time) {
 
 // 期限切れレポート専用のエントリ（時間トリガーで10:00などに実行する想定）
 function ReportExpired() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1)) {
-    return;
-  }
-  try {
+  withScriptLock('ReportExpired', function () {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const config = Config.create();
     const notificationSheetNames = getNotificationSheetNames();
@@ -156,9 +157,7 @@ function ReportExpired() {
     const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
     const expiredRows = collectExpiredRows(spreadsheet, notificationSheetNames, now);
     notifyExpiredRows(expiredRows, config, slackNotifier);
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 function collectExpiredRows(spreadsheet, sheetNames, now) {
@@ -215,9 +214,9 @@ function parseNotificationRow(row, notificationNo) {
   }
 
   return {
-    year: row[COLS.YEAR],
-    month: row[COLS.MONTH],
-    day: row[COLS.DAY],
+    year: normalizeDayCell(row[COLS.YEAR]),
+    month: normalizeDayCell(row[COLS.MONTH]),
+    day: normalizeDayCell(row[COLS.DAY]),
     time: row[COLS.TIME],
     weeks: row.slice(COLS.WEEKS_START, COLS.WEEKS_START + 7),
     allowOffday: row[COLS.HOLIDAY],
@@ -278,6 +277,48 @@ function isPastDate(row, now) {
 
 function dateKey(date) {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function normalizeDayCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  return value;
+}
+
+function withScriptLock(actionName, action) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_WAIT_MS)) {
+    logError(`${actionName} のロック取得に失敗しました waitMs:${LOCK_WAIT_MS}`);
+    return false;
+  }
+
+  try {
+    action();
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function buildLastNotifiedKey(sheetName, notificationNo) {
+  return `${LAST_NOTIFIED_PREFIX}:${sheetName}:${notificationNo}`;
+}
+
+function isAlreadyNotified(stateKey, scheduledTimeKey) {
+  const props = PropertiesService.getScriptProperties();
+  return props.getProperty(stateKey) === scheduledTimeKey;
+}
+
+function markAsNotified(stateKey, scheduledTimeKey) {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(stateKey, scheduledTimeKey);
 }
 
 function logRowStart(no) {

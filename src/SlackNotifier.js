@@ -98,6 +98,9 @@ SlackNotifier.prototype.fetch = function (url, payload) {
     });
 
     if (response.getResponseCode() >= 400) {
-        Logger.log(Utilities.formatString('Send error: %s from %s', response.getContentText(), payload.channel));
+        const responseCode = response.getResponseCode();
+        const responseBody = response.getContentText();
+        Logger.log(Utilities.formatString('Send error: %s from %s', responseBody, payload.channel));
+        throw new Error(Utilities.formatString('Slack送信失敗 status:%s channel:%s body:%s', responseCode, payload.channel, responseBody));
     }
 }

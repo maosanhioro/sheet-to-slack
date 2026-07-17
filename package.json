@@ -7,6 +7,7 @@
         "pull": "clasp pull",
         "open": "clasp open",
         "logs": "clasp logs",
+        "test": "node tests/run-tests.js",
         "create": "clasp create --title \"SheetToSlack\" --type standalone",
         "setup": "npm install -g @google/clasp && clasp login"
     },
