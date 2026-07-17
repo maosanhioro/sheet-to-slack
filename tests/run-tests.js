@@ -26,6 +26,9 @@ function createUtilities() {
       if (format === 'yyyy/MM/dd HH:mm') {
         return `${year}/${month}/${day} ${hours}:${minutes}`;
       }
+      if (format === 'yyyy/MM/dd') {
+        return `${year}/${month}/${day}`;
+      }
       if (format === 'HH:mm') {
         return `${hours}:${minutes}`;
       }
@@ -127,6 +130,8 @@ function createNotificationRow(overrides = {}) {
     'general',
     '',
     '定期通知',
+    '',
+    '',
     ''
   ];
 
@@ -166,18 +171,43 @@ function testNotificationTimeMatchesWithinLookbackWindow() {
 
   const weeks = [false, false, false, false, false, true, false];
   const notificationTime = new context.NotificationTime(
-    new Date(2026, 6, 17, 10, 3, 0, 0),
+    new Date(2026, 6, 17, 10, 12, 0, 0),
     '指定なし',
     '指定なし',
     '指定なし',
     new Date(2026, 6, 17, 10, 0, 0, 0),
     weeks,
     true,
-    { lookbackMinutes: 5 }
+    { lookbackMinutes: 15 }
   );
 
   assert.strictEqual(notificationTime.isNotify(), true);
   assert.strictEqual(notificationTime.getScheduledTimeKey(), '2026-07-17 10:00');
+}
+
+function createSheet(rows) {
+  return {
+    rows,
+    writes: [],
+    getDataRange() {
+      return {
+        getValues: () => this.rows
+      };
+    },
+    getRange(row, column, numRows, numColumns) {
+      const sheet = this;
+      return {
+        setValues(values) {
+          sheet.writes.push({ row, column, numRows, numColumns, values });
+          for (let rowOffset = 0; rowOffset < numRows; rowOffset += 1) {
+            for (let columnOffset = 0; columnOffset < numColumns; columnOffset += 1) {
+              sheet.rows[row - 1 + rowOffset][column - 1 + columnOffset] = values[rowOffset][columnOffset];
+            }
+          }
+        }
+      };
+    }
+  };
 }
 
 function testProcessNotificationRowsSkipsAlreadySentNotification() {
@@ -199,7 +229,7 @@ function testProcessNotificationRowsSkipsAlreadySentNotification() {
   context.__scriptProperties['LAST_NOTIFIED:通知設定:2'] = '2026-07-17 10:00';
   context.processNotificationRows(
     [['header'], row],
-    new Date(2026, 6, 17, 10, 3, 0, 0),
+    new Date(2026, 6, 17, 10, 12, 0, 0),
     slackNotifier,
     { isErrorMail: false, botMaster: '' },
     '通知設定'
@@ -231,7 +261,7 @@ function testProcessNotificationRowsAcceptsNumericDateCells() {
 
   context.processNotificationRows(
     [['header'], row],
-    new Date(2026, 6, 17, 10, 2, 0, 0),
+    new Date(2026, 6, 17, 10, 12, 0, 0),
     slackNotifier,
     { isErrorMail: false, botMaster: '' },
     '通知設定'
@@ -241,11 +271,99 @@ function testProcessNotificationRowsAcceptsNumericDateCells() {
   assert.strictEqual(context.__scriptProperties['LAST_NOTIFIED:通知設定:2'], '2026-07-17 10:00');
 }
 
+function testNotificationTimeDoesNotMatchOutsideRecoveryWindow() {
+  const context = createContext();
+  loadScripts(context, ['src/NotificationTime.js']);
+
+  const weeks = [false, false, false, false, false, true, false];
+  const notificationTime = new context.NotificationTime(
+    new Date(2026, 6, 17, 10, 16, 0, 0),
+    '指定なし',
+    '指定なし',
+    '指定なし',
+    new Date(2026, 6, 17, 10, 0, 0, 0),
+    weeks,
+    true,
+    { lookbackMinutes: 15 }
+  );
+
+  assert.strictEqual(notificationTime.isNotify(), false);
+}
+
+function testCollectExpiredRowsSkipsAlreadyReportedRows() {
+  const context = createContext();
+  loadScripts(context, ['src/NotificationTime.js', 'src/Code.js']);
+
+  const rows = [
+    ['header'],
+    createNotificationRow({
+      0: 2026,
+      1: 7,
+      2: 10,
+      16: '通知済み',
+      17: '2026/07/11'
+    }),
+    createNotificationRow({
+      0: 2026,
+      1: 7,
+      2: 9
+    })
+  ];
+  const sheet = createSheet(rows);
+  const spreadsheet = {
+    getSheetByName() {
+      return sheet;
+    }
+  };
+
+  const expiredRows = context.collectExpiredRows(spreadsheet, ['通知設定'], new Date(2026, 6, 17, 10, 0, 0, 0));
+  assert.strictEqual(expiredRows.length, 1);
+  assert.strictEqual(expiredRows[0].row, 3);
+}
+
+function testNotifyExpiredRowsMarksSheetAfterSend() {
+  const context = createContext();
+  loadScripts(context, ['src/NotificationTime.js', 'src/Code.js']);
+
+  const rows = [
+    ['header'],
+    createNotificationRow({
+      0: 2026,
+      1: 7,
+      2: 10
+    })
+  ];
+  const sheet = createSheet(rows);
+  const sentMessages = [];
+  const slackNotifier = {
+    send(channel, mention, message) {
+      sentMessages.push({ channel, mention, message });
+    }
+  };
+
+  context.notifyExpiredRows([{
+    sheetRef: sheet,
+    sheet: '通知設定',
+    row: 2,
+    date: '2026/7/10',
+    slackChannel: 'general',
+    message: '定期通知'
+  }], new Date(2026, 6, 17, 9, 0, 0, 0), slackNotifier);
+
+  assert.strictEqual(sentMessages.length, 1);
+  assert.match(sentMessages[0].message, /予定日を過ぎています/);
+  assert.strictEqual(sheet.rows[1][16], '通知済み');
+  assert.strictEqual(sheet.rows[1][17], '2026/07/17');
+}
+
 function run() {
   testSlackNotifierThrowsOnHttpError();
   testNotificationTimeMatchesWithinLookbackWindow();
+  testNotificationTimeDoesNotMatchOutsideRecoveryWindow();
   testProcessNotificationRowsSkipsAlreadySentNotification();
   testProcessNotificationRowsAcceptsNumericDateCells();
+  testCollectExpiredRowsSkipsAlreadyReportedRows();
+  testNotifyExpiredRowsMarksSheetAfterSend();
   console.log('All tests passed');
 }
 

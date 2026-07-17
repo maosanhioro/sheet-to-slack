@@ -2,7 +2,7 @@
 // 通知設定シートの列インデックス定義。
 const LOG_PREFIX = '[sheet-to-slack]';
 const LOCK_WAIT_MS = 30000;
-const NOTIFICATION_LOOKBACK_MINUTES = 5;
+const NOTIFICATION_RECOVERY_WINDOW_MINUTES = 15;
 const LAST_NOTIFIED_PREFIX = 'LAST_NOTIFIED';
 
 const COLS = {
@@ -15,8 +15,12 @@ const COLS = {
   SLACK_CHANNEL: 12,
   DESTINATION: 13,
   MESSAGE: 14,
-  REGISTERED_BY: 15
+  REGISTERED_BY: 15,
+  EXPIRED_STATUS: 16,
+  EXPIRED_NOTIFIED_AT: 17
 };
+
+const EXPIRED_STATUS_NOTIFIED = '通知済み';
 
 function Main() {
   withScriptLock('Main', Action);
@@ -78,7 +82,7 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName) {
       row.time,
       row.weeks,
       row.allowOffday,
-      { lookbackMinutes: NOTIFICATION_LOOKBACK_MINUTES }
+      { lookbackMinutes: NOTIFICATION_RECOVERY_WINDOW_MINUTES }
     );
 
     logRowStart(notificationNo);
@@ -116,31 +120,17 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName) {
   }
 }
 
-function notifyExpiredRows(expiredRows, config, slackNotifier) {
-  if (expiredRows.length === 0) {
-    return;
-  }
-
-  const lines = expiredRows.map(function (item) {
-    const registered = item.registeredBy ? ` 登録者:${item.registeredBy}` : '';
-    return `シート:${item.sheet} 行:${item.row} 日付:${item.date}${registered}`;
-  });
-  const body = ['過去日付のためスキップした行があります。不要なら削除をご検討ください。', ''].concat(lines).join('\n');
-
-  if (config.expiredReportChannel) {
+function notifyExpiredRows(expiredRows, now, slackNotifier) {
+  expiredRows.forEach(function (item) {
+    const body = buildExpiredNotificationMessage(item);
     try {
-      slackNotifier.send(config.expiredReportChannel, '', body);
-      return;
+      slackNotifier.send(item.slackChannel, '', body);
+      markExpiredRowAsNotified(item, now);
+      logInfo(`期限切れ通知を送信しました sheet:${item.sheet} row:${item.row}`);
     } catch (e) {
-      logError(`期限切れ通知のSlack送信に失敗: ${e.message}`);
+      logError(`期限切れ通知のSlack送信に失敗 sheet:${item.sheet} row:${item.row} message:${e.message}`);
     }
-  }
-
-  if (config.botMaster) {
-    MailApp.sendEmail(config.botMaster, 'sheet-to-slack 期限切れ通知行レポート', body);
-  } else {
-    logInfo(`期限切れの行が${expiredRows.length}件ありますが、通知先が未設定のため送信しません`);
-  }
+  });
 }
 
 function formatTime(time) {
@@ -156,7 +146,7 @@ function ReportExpired() {
     const now = new Date(config.debugDate);
     const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
     const expiredRows = collectExpiredRows(spreadsheet, notificationSheetNames, now);
-    notifyExpiredRows(expiredRows, config, slackNotifier);
+    notifyExpiredRows(expiredRows, now, slackNotifier);
   });
 }
 
@@ -181,12 +171,14 @@ function collectExpiredRows(spreadsheet, sheetNames, now) {
         continue;
       }
       // 日付指定があり、過去日付のものだけを期限切れとして集計
-      if (isPastDate(row, now)) {
+      if (isPastDate(row, now) && !isExpiredRowAlreadyNotified(row)) {
         expired.push({
+          sheetRef: sheet,
           sheet: sheetName,
           row: notificationNo,
           date: `${row.year}/${row.month}/${row.day}`,
-          registeredBy: row.registeredBy
+          slackChannel: row.slackChannel,
+          message: row.message
         });
       }
     }
@@ -224,6 +216,8 @@ function parseNotificationRow(row, notificationNo) {
     destination: row[COLS.DESTINATION],
     message: row[COLS.MESSAGE],
     registeredBy: row[COLS.REGISTERED_BY],
+    expiredStatus: normalizeTextCell(row[COLS.EXPIRED_STATUS]),
+    expiredNotifiedAt: normalizeTextCell(row[COLS.EXPIRED_NOTIFIED_AT]),
     notificationNo: notificationNo
   };
 }
@@ -290,6 +284,36 @@ function normalizeDayCell(value) {
     return value.trim();
   }
   return value;
+}
+
+function normalizeTextCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return value.toString().trim();
+}
+
+function isExpiredRowAlreadyNotified(row) {
+  return row.expiredStatus === EXPIRED_STATUS_NOTIFIED;
+}
+
+function buildExpiredNotificationMessage(item) {
+  return [
+    'この通知設定は予定日を過ぎています。不要なら削除してください。',
+    '',
+    `シート: ${item.sheet}`,
+    `行: ${item.row}`,
+    `予定日: ${item.date}`,
+    `通知先: ${item.slackChannel}`,
+    `内容: ${item.message}`
+  ].join('\n');
+}
+
+function markExpiredRowAsNotified(item, now) {
+  item.sheetRef.getRange(item.row, COLS.EXPIRED_STATUS + 1, 1, 2).setValues([[
+    EXPIRED_STATUS_NOTIFIED,
+    Utilities.formatDate(now, 'JST', 'yyyy/MM/dd')
+  ]]);
 }
 
 function withScriptLock(actionName, action) {
