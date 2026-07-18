@@ -12,7 +12,14 @@ Google スプレッドシートの内容を Slack に通知する Google Apps Sc
 ```
 sheet-to-slack/
 ├── src/                 # clasp の rootDir
-│   ├── Code.js          # エントリポイント
+│   ├── Triggers.js      # GASトリガーから呼ばれるエントリポイント（Main/Action/ReportExpired）
+│   ├── RowProcessor.js  # 通知設定行のパース・検証・通常通知処理
+│   ├── ExpiredRows.js   # 期限切れ（棚卸し対象）行の収集・記録
+│   ├── StateStore.js    # スクリプトロックと通知済み状態の管理
+│   ├── Utils.js         # 定数・ログ・値正規化などの共通ユーティリティ
+│   ├── Config.js        # Script Properties の設定読み込み
+│   ├── SlackNotifier.js # Slack送信処理
+│   ├── NotificationTime.js # 通知タイミング判定
 │   └── appsscript.json  # GAS マニフェスト
 ├── docs/                # 仕様・改善提案
 ├── .clasp.json.example  # Script ID を入れる雛形
@@ -35,10 +42,10 @@ sheet-to-slack/
    - `SLACK_ICON_EMOJI` : 必須。Slackに表示するアイコン絵文字（例: `:bell:` のような絵文字名）
    - `BOT_MASTER` : 管理者メールアドレス（任意、エラー通知用）
    - `ERROR_MAIL_ENABLED` : エラーメール送信可否（true/false）
-   - `EXPIRED_REPORT_CHANNEL` : 任意。期限切れ行レポートの送信先チャンネル（未設定なら管理者メール）
    - `DEBUG_DATE` : デバッグ実行日時（任意。未設定なら現在日時）
-5. （任意）期限切れレポート用の時間トリガーを設定  
-   - 関数 `ReportExpired` を毎日10:00などで実行すると、過去日付行の一覧を Slack/メールで受け取れます。
+5. （任意）期限切れ棚卸し用の時間トリガーを設定  
+   - 関数 `ReportExpired` を毎日10:00などで実行すると、過去日付の単発通知行に `棚卸し記録日`（実行日、`yyyy/MM/dd`）が自動で記録されます（Slack通知は行いません）。
+   - シートを開いたときに見落とさないよう、`棚卸し記録日` 列を目立たせる条件付き書式の設定をおすすめします。手順は `docs/USER_GUIDE.md` を参照してください。
 6. `npm run pull` で既存のスクリプトを取得、または `npm run create` で新規作成。
 
 ## 使い方（シート）

@@ -1,5 +1,4 @@
-// 通知設定シートを読み取り、Slack/メール送信を行うメイン処理。
-// 通知設定シートの列インデックス定義。
+// 通知設定シートを読み取り、Slack送信を行うメイン処理。
 const LOG_PREFIX = '[sheet-to-slack]';
 const LOCK_WAIT_MS = 30000;
 const NOTIFICATION_RECOVERY_WINDOW_MINUTES = 15;
@@ -16,37 +15,106 @@ const COLS = {
   DESTINATION: 13,
   MESSAGE: 14,
   REGISTERED_BY: 15,
-  EXPIRED_STATUS: 16,
-  EXPIRED_NOTIFIED_AT: 17
+  EXPIRED_RECORDED_AT: 16
 };
 
-const EXPIRED_STATUS_NOTIFIED = '通知済み';
-
-function Main() {
-  withScriptLock('Main', Action);
+function normalizeDayCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  return value;
 }
 
-// 補助エントリ（小文字）も用意
-function main() {
-  Main();
+function normalizeTextCell(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return value.toString().trim();
 }
 
-function Action() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const config = Config.create();
-  const notificationSheetNames = getNotificationSheetNames();
-  const now = new Date(config.debugDate);
-  const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
-  logInfo('通知処理開始');
+function dateKey(date) {
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
 
-  notificationSheetNames.forEach(function (sheetName) {
-    const notificationSheet = spreadsheet.getSheetByName(sheetName);
-    if (!notificationSheet) {
-      throw new Error(`通知シートが見つかりません: ${sheetName}`);
-    }
-    const rows = notificationSheet.getDataRange().getValues();
-    processNotificationRows(rows, now, slackNotifier, config, sheetName);
+function formatTime(time) {
+  return Utilities.formatDate(new Date(time), 'JST', 'HH:mm');
+}
+
+function logInfo(message) {
+  Logger.log(`${LOG_PREFIX} ${message}`);
+}
+
+function logError(message) {
+  Logger.log(`${LOG_PREFIX} [ERROR] ${message}`);
+}
+
+function logWithRow(no, message) {
+  Logger.log(`${LOG_PREFIX} [row=${no}] ${message}`);
+}
+
+function logRowStart(no) {
+  logWithRow(no, '通知開始');
+}
+
+function logRowSkip(no, reason) {
+  logWithRow(no, reason ? `通知スキップ ${reason}` : '通知スキップ');
+}
+
+function logRowDone(no) {
+  logWithRow(no, '通知完了');
+}
+
+function logSkip(no, reason) {
+  logRowSkip(no, reason);
+}
+
+function withScriptLock(actionName, action) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_WAIT_MS)) {
+    logError(`${actionName} のロック取得に失敗しました waitMs:${LOCK_WAIT_MS}`);
+    return false;
+  }
+
+  try {
+    action();
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function buildLastNotifiedKey(sheetName, notificationNo) {
+  return `${LAST_NOTIFIED_PREFIX}:${sheetName}:${notificationNo}`;
+}
+
+function isAlreadyNotified(stateKey, scheduledTimeKey) {
+  const props = PropertiesService.getScriptProperties();
+  return props.getProperty(stateKey) === scheduledTimeKey;
+}
+
+function markAsNotified(stateKey, scheduledTimeKey) {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(stateKey, scheduledTimeKey);
+}
+
+function getNotificationSheetNames() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = (props.getProperty('NOTIFICATION_SHEETS') || '').toString();
+  const names = raw.split(',').map(function (name) {
+    return name.trim();
+  }).filter(function (name) {
+    return name !== '';
   });
+  if (names.length === 0) {
+    throw new Error('Script Properties NOTIFICATION_SHEETS が設定されていません');
+  }
+  return names;
 }
 
 function processNotificationRows(rows, now, slackNotifier, config, sheetName) {
@@ -120,86 +188,6 @@ function processNotificationRows(rows, now, slackNotifier, config, sheetName) {
   }
 }
 
-function notifyExpiredRows(expiredRows, now, slackNotifier) {
-  expiredRows.forEach(function (item) {
-    const body = buildExpiredNotificationMessage(item);
-    try {
-      slackNotifier.send(item.slackChannel, '', body);
-      markExpiredRowAsNotified(item, now);
-      logInfo(`期限切れ通知を送信しました sheet:${item.sheet} row:${item.row}`);
-    } catch (e) {
-      logError(`期限切れ通知のSlack送信に失敗 sheet:${item.sheet} row:${item.row} message:${e.message}`);
-    }
-  });
-}
-
-function formatTime(time) {
-  return Utilities.formatDate(new Date(time), 'JST', 'HH:mm');
-}
-
-// 期限切れレポート専用のエントリ（時間トリガーで10:00などに実行する想定）
-function ReportExpired() {
-  withScriptLock('ReportExpired', function () {
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    const config = Config.create();
-    const notificationSheetNames = getNotificationSheetNames();
-    const now = new Date(config.debugDate);
-    const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
-    const expiredRows = collectExpiredRows(spreadsheet, notificationSheetNames, now);
-    notifyExpiredRows(expiredRows, now, slackNotifier);
-  });
-}
-
-function collectExpiredRows(spreadsheet, sheetNames, now) {
-  const expired = [];
-  sheetNames.forEach(function (sheetName) {
-    const sheet = spreadsheet.getSheetByName(sheetName);
-    if (!sheet) {
-      throw new Error(`通知シートが見つかりません: ${sheetName}`);
-    }
-    const rows = sheet.getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      const notificationNo = i + 1;
-      const row = parseNotificationRow(rows[i], notificationNo);
-      if (!row) {
-        continue;
-      }
-      if (!isValidDateCell(row.time)) {
-        continue;
-      }
-      if (!isValidDayCells(row.year, row.month, row.day)) {
-        continue;
-      }
-      // 日付指定があり、過去日付のものだけを期限切れとして集計
-      if (isPastDate(row, now) && !isExpiredRowAlreadyNotified(row)) {
-        expired.push({
-          sheetRef: sheet,
-          sheet: sheetName,
-          row: notificationNo,
-          date: `${row.year}/${row.month}/${row.day}`,
-          slackChannel: row.slackChannel,
-          message: row.message
-        });
-      }
-    }
-  });
-  return expired;
-}
-
-function getNotificationSheetNames() {
-  const props = PropertiesService.getScriptProperties();
-  const raw = (props.getProperty('NOTIFICATION_SHEETS') || '').toString();
-  const names = raw.split(',').map(function (name) {
-    return name.trim();
-  }).filter(function (name) {
-    return name !== '';
-  });
-  if (names.length === 0) {
-    throw new Error('Script Properties NOTIFICATION_SHEETS が設定されていません');
-  }
-  return names;
-}
-
 function parseNotificationRow(row, notificationNo) {
   if (row[COLS.SLACK_CHANNEL] === '' || row[COLS.MESSAGE] === '') {
     return null;
@@ -216,8 +204,7 @@ function parseNotificationRow(row, notificationNo) {
     destination: row[COLS.DESTINATION],
     message: row[COLS.MESSAGE],
     registeredBy: row[COLS.REGISTERED_BY],
-    expiredStatus: normalizeTextCell(row[COLS.EXPIRED_STATUS]),
-    expiredNotifiedAt: normalizeTextCell(row[COLS.EXPIRED_NOTIFIED_AT]),
+    expiredRecordedAt: normalizeTextCell(row[COLS.EXPIRED_RECORDED_AT]),
     notificationNo: notificationNo
   };
 }
@@ -269,106 +256,91 @@ function isPastDate(row, now) {
   return targetDate < startOfToday;
 }
 
-function dateKey(date) {
-  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+function collectExpiredRows(spreadsheet, sheetNames, now) {
+  const expired = [];
+  sheetNames.forEach(function (sheetName) {
+    const sheet = spreadsheet.getSheetByName(sheetName);
+    if (!sheet) {
+      throw new Error(`通知シートが見つかりません: ${sheetName}`);
+    }
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      const notificationNo = i + 1;
+      const row = parseNotificationRow(rows[i], notificationNo);
+      if (!row) {
+        continue;
+      }
+      if (!isValidDateCell(row.time)) {
+        continue;
+      }
+      if (!isValidDayCells(row.year, row.month, row.day)) {
+        continue;
+      }
+      // 日付指定があり、過去日付のものだけを期限切れとして集計
+      if (isPastDate(row, now) && !isExpiredRowAlreadyRecorded(row)) {
+        expired.push({
+          sheetRef: sheet,
+          sheet: sheetName,
+          row: notificationNo
+        });
+      }
+    }
+  });
+  return expired;
 }
 
-function normalizeDayCell(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    return value.trim();
-  }
-  return value;
+function recordExpiredRows(expiredRows, now) {
+  expiredRows.forEach(function (item) {
+    markExpiredRowAsRecorded(item, now);
+    logInfo(`期限切れ棚卸しを記録しました sheet:${item.sheet} row:${item.row}`);
+  });
 }
 
-function normalizeTextCell(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  return value.toString().trim();
+function isExpiredRowAlreadyRecorded(row) {
+  return row.expiredRecordedAt !== '';
 }
 
-function isExpiredRowAlreadyNotified(row) {
-  return row.expiredStatus === EXPIRED_STATUS_NOTIFIED;
-}
-
-function buildExpiredNotificationMessage(item) {
-  return [
-    'この通知設定は予定日を過ぎています。不要なら削除してください。',
-    '',
-    `シート: ${item.sheet}`,
-    `行: ${item.row}`,
-    `予定日: ${item.date}`,
-    `通知先: ${item.slackChannel}`,
-    `内容: ${item.message}`
-  ].join('\n');
-}
-
-function markExpiredRowAsNotified(item, now) {
-  item.sheetRef.getRange(item.row, COLS.EXPIRED_STATUS + 1, 1, 2).setValues([[
-    EXPIRED_STATUS_NOTIFIED,
+function markExpiredRowAsRecorded(item, now) {
+  item.sheetRef.getRange(item.row, COLS.EXPIRED_RECORDED_AT + 1, 1, 1).setValue(
     Utilities.formatDate(now, 'JST', 'yyyy/MM/dd')
-  ]]);
+  );
 }
 
-function withScriptLock(actionName, action) {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(LOCK_WAIT_MS)) {
-    logError(`${actionName} のロック取得に失敗しました waitMs:${LOCK_WAIT_MS}`);
-    return false;
-  }
-
-  try {
-    action();
-    return true;
-  } finally {
-    lock.releaseLock();
-  }
+function Main() {
+  withScriptLock('Main', Action);
 }
 
-function buildLastNotifiedKey(sheetName, notificationNo) {
-  return `${LAST_NOTIFIED_PREFIX}:${sheetName}:${notificationNo}`;
+// 補助エントリ（小文字）も用意
+function main() {
+  Main();
 }
 
-function isAlreadyNotified(stateKey, scheduledTimeKey) {
-  const props = PropertiesService.getScriptProperties();
-  return props.getProperty(stateKey) === scheduledTimeKey;
+function Action() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const config = Config.create();
+  const notificationSheetNames = getNotificationSheetNames();
+  const now = new Date(config.debugDate);
+  const slackNotifier = new SlackNotifier(config.webhookUrl, config.slackUsername, config.slackIconEmoji);
+  logInfo('通知処理開始');
+
+  notificationSheetNames.forEach(function (sheetName) {
+    const notificationSheet = spreadsheet.getSheetByName(sheetName);
+    if (!notificationSheet) {
+      throw new Error(`通知シートが見つかりません: ${sheetName}`);
+    }
+    const rows = notificationSheet.getDataRange().getValues();
+    processNotificationRows(rows, now, slackNotifier, config, sheetName);
+  });
 }
 
-function markAsNotified(stateKey, scheduledTimeKey) {
-  const props = PropertiesService.getScriptProperties();
-  props.setProperty(stateKey, scheduledTimeKey);
-}
-
-function logRowStart(no) {
-  logWithRow(no, '通知開始');
-}
-
-function logRowSkip(no, reason) {
-  logWithRow(no, reason ? `通知スキップ ${reason}` : '通知スキップ');
-}
-
-function logRowDone(no) {
-  logWithRow(no, '通知完了');
-}
-
-function logSkip(no, reason) {
-  logRowSkip(no, reason);
-}
-
-function logInfo(message) {
-  Logger.log(`${LOG_PREFIX} ${message}`);
-}
-
-function logError(message) {
-  Logger.log(`${LOG_PREFIX} [ERROR] ${message}`);
-}
-
-function logWithRow(no, message) {
-  Logger.log(`${LOG_PREFIX} [row=${no}] ${message}`);
+// 期限切れレポート専用のエントリ（時間トリガーで10:00などに実行する想定）
+function ReportExpired() {
+  withScriptLock('ReportExpired', function () {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const config = Config.create();
+    const notificationSheetNames = getNotificationSheetNames();
+    const now = new Date(config.debugDate);
+    const expiredRows = collectExpiredRows(spreadsheet, notificationSheetNames, now);
+    recordExpiredRows(expiredRows, now);
+  });
 }

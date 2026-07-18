@@ -1,12 +1,11 @@
 // Script Properties から Webhook設定やエラー通知先を保持する。
-function Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji, expiredReportChannel) {
+function Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji) {
     this.webhookUrl = webhookUrl;
     this.botMaster = botMaster;
     this.isErrorMail = isErrorMail;
     this.debugDate = debugDate;
     this.slackUsername = slackUsername;
     this.slackIconEmoji = slackIconEmoji;
-    this.expiredReportChannel = expiredReportChannel;
 }
 
 Config.create = function () {
@@ -33,7 +32,5 @@ Config.create = function () {
     const debugDateString = debugDateValue && debugDateValue !== '' ? debugDateValue : new Date().getTime();
     const debugDate = Utilities.formatDate(new Date(debugDateString), 'JST', 'yyyy/MM/dd HH:mm');
 
-    const expiredReportChannel = (props.getProperty('EXPIRED_REPORT_CHANNEL') || '').toString().trim();
-
-    return new Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji, expiredReportChannel);
+    return new Config(webhookUrl, botMaster, isErrorMail, debugDate, slackUsername, slackIconEmoji);
 };

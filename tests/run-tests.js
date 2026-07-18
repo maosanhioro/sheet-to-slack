@@ -204,6 +204,10 @@ function createSheet(rows) {
               sheet.rows[row - 1 + rowOffset][column - 1 + columnOffset] = values[rowOffset][columnOffset];
             }
           }
+        },
+        setValue(value) {
+          sheet.writes.push({ row, column, numRows, numColumns, values: [[value]] });
+          sheet.rows[row - 1][column - 1] = value;
         }
       };
     }
@@ -300,8 +304,7 @@ function testCollectExpiredRowsSkipsAlreadyReportedRows() {
       0: 2026,
       1: 7,
       2: 10,
-      16: '通知済み',
-      17: '2026/07/11'
+      16: '2026/07/11'
     }),
     createNotificationRow({
       0: 2026,
@@ -321,7 +324,7 @@ function testCollectExpiredRowsSkipsAlreadyReportedRows() {
   assert.strictEqual(expiredRows[0].row, 3);
 }
 
-function testNotifyExpiredRowsMarksSheetAfterSend() {
+function testRecordExpiredRowsMarksSheetWithoutSlackSend() {
   const context = createContext();
   loadScripts(context, ['src/NotificationTime.js', 'src/Code.js']);
 
@@ -334,26 +337,17 @@ function testNotifyExpiredRowsMarksSheetAfterSend() {
     })
   ];
   const sheet = createSheet(rows);
-  const sentMessages = [];
-  const slackNotifier = {
-    send(channel, mention, message) {
-      sentMessages.push({ channel, mention, message });
-    }
-  };
 
-  context.notifyExpiredRows([{
+  context.recordExpiredRows([{
     sheetRef: sheet,
     sheet: '通知設定',
-    row: 2,
-    date: '2026/7/10',
-    slackChannel: 'general',
-    message: '定期通知'
-  }], new Date(2026, 6, 17, 9, 0, 0, 0), slackNotifier);
+    row: 2
+  }], new Date(2026, 6, 17, 9, 0, 0, 0));
 
-  assert.strictEqual(sentMessages.length, 1);
-  assert.match(sentMessages[0].message, /予定日を過ぎています/);
-  assert.strictEqual(sheet.rows[1][16], '通知済み');
-  assert.strictEqual(sheet.rows[1][17], '2026/07/17');
+  assert.strictEqual(sheet.rows[1][16], '2026/07/17');
+  assert.strictEqual(sheet.rows[1][17], '');
+  assert.strictEqual(sheet.writes.length, 1);
+  assert.strictEqual(sheet.writes[0].numColumns, 1);
 }
 
 function run() {
@@ -363,7 +357,7 @@ function run() {
   testProcessNotificationRowsSkipsAlreadySentNotification();
   testProcessNotificationRowsAcceptsNumericDateCells();
   testCollectExpiredRowsSkipsAlreadyReportedRows();
-  testNotifyExpiredRowsMarksSheetAfterSend();
+  testRecordExpiredRowsMarksSheetWithoutSlackSend();
   console.log('All tests passed');
 }
 
