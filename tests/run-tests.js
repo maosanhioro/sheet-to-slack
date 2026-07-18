@@ -216,7 +216,7 @@ function createSheet(rows) {
 
 function testProcessNotificationRowsSkipsAlreadySentNotification() {
   const context = createContext();
-  loadScripts(context, ['src/NotificationTime.js', 'src/Code.js']);
+  loadScripts(context, ['src/Utils.js', 'src/StateStore.js', 'src/NotificationTime.js', 'src/RowProcessor.js']);
 
   const sentMessages = [];
   const slackNotifier = {
@@ -244,7 +244,7 @@ function testProcessNotificationRowsSkipsAlreadySentNotification() {
 
 function testProcessNotificationRowsAcceptsNumericDateCells() {
   const context = createContext();
-  loadScripts(context, ['src/NotificationTime.js', 'src/Code.js']);
+  loadScripts(context, ['src/Utils.js', 'src/StateStore.js', 'src/NotificationTime.js', 'src/RowProcessor.js']);
 
   const sentMessages = [];
   const slackNotifier = {
@@ -296,7 +296,7 @@ function testNotificationTimeDoesNotMatchOutsideRecoveryWindow() {
 
 function testCollectExpiredRowsSkipsAlreadyReportedRows() {
   const context = createContext();
-  loadScripts(context, ['src/NotificationTime.js', 'src/Code.js']);
+  loadScripts(context, ['src/Utils.js', 'src/StateStore.js', 'src/RowProcessor.js', 'src/ExpiredRows.js']);
 
   const rows = [
     ['header'],
@@ -326,7 +326,7 @@ function testCollectExpiredRowsSkipsAlreadyReportedRows() {
 
 function testRecordExpiredRowsMarksSheetWithoutSlackSend() {
   const context = createContext();
-  loadScripts(context, ['src/NotificationTime.js', 'src/Code.js']);
+  loadScripts(context, ['src/Utils.js', 'src/StateStore.js', 'src/RowProcessor.js', 'src/ExpiredRows.js']);
 
   const rows = [
     ['header'],
